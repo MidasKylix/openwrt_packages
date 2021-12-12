@@ -1,84 +1,81 @@
+#
+# Copyright (C) 2020-2021 honwen <https://github.com/honwen>
+#
+# This is free software, licensed under the GNU General Public License v3.
+# See /LICENSE for more information.
+#
+
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=openwrt-xray
-PKG_VERSION:=1.4.2
-PKG_RELEASE:=1
+PKG_NAME:=xray
+PKG_VERSION:=1.4.5
+PKG_RELEASE:=20210923
+PKG_MAINTAINER:=honwen <https://github.com/honwen>
 
-PKG_LICENSE:=MPLv2
-PKG_LICENSE_FILES:=LICENSE
-PKG_MAINTAINER:=yichya <mail@yichya.dev>
-
-PKG_SOURCE:=Xray-core-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=https://codeload.github.com/XTLS/Xray-core/tar.gz/v${PKG_VERSION}?
-PKG_HASH:=565255d8c67b254f403d498b9152fa7bc097d649c50cb318d278c2be644e92cc
-PKG_BUILD_DEPENDS:=golang/host
-PKG_BUILD_PARALLEL:=1
-
-GO_PKG:=github.com/XTLS/Xray-core
-
-include $(INCLUDE_DIR)/package.mk
-include $(INCLUDE_DIR)/../feeds/packages/lang/golang/golang-package.mk
-
-define Package/$(PKG_NAME)
-	SECTION:=Custom
-	CATEGORY:=Extra packages
-	TITLE:=Xray-core
-	DEPENDS:=$(GO_ARCH_DEPENDS)
-	PROVIDES:=xray-core
-endef
-
-define Package/$(PKG_NAME)/description
-	Xray-core bare bones binary and optional geoip / geosite data files
-endef
-
-define Package/$(PKG_NAME)/config
-menu "Xray Configuration"
-	depends on PACKAGE_$(PKG_NAME)
-
-config PACKAGE_XRAY_FETCH_VIA_PROXYCHAINS
-	bool "Fetch data files using proxychains (not recommended)"
-	default n
-
-config PACKAGE_XRAY_INCLUDE_GEOIP
-	bool "Include Loyalsoldier geoip.dat"
-	default n
-
-config PACKAGE_XRAY_INCLUDE_GEOSITE
-	bool "Include Loyalsoldier geosite.dat"
-	default n
-
-endmenu
-endef
-
-PROXYCHAINS:=
-
-ifdef CONFIG_PACKAGE_XRAY_FETCH_VIA_PROXYCHAINS
-	PROXYCHAINS:=proxychains
+# OpenWrt ARCH: arm, aarch64, i386, x86_64, mips, mipsel
+# Golang ARCH: arm32_v6, arm64_v8a, 32, 64, mips32, mips32le
+PKG_ARCH:=$(ARCH)
+ifeq ($(ARCH),mips)
+	PKG_ARCH:=mips32
+endif
+ifeq ($(ARCH),mipsel)
+	PKG_ARCH:=mips32le
+endif
+ifeq ($(ARCH),i386)
+	PKG_ARCH:=32
+endif
+ifeq ($(ARCH),x86_64)
+	PKG_ARCH:=64
+endif
+ifeq ($(ARCH),arm)
+	PKG_ARCH:=arm32-v6
+endif
+ifeq ($(ARCH),aarch64)
+	PKG_ARCH:=arm64-v8a
 endif
 
-MAKE_PATH:=$(GO_PKG_WORK_DIR_NAME)/build/src/$(GO_PKG)
-MAKE_VARS += $(GO_PKG_VARS)
+PKG_SOURCE:=Xray-linux-$(PKG_ARCH).zip
+PKG_SOURCE_URL:=https://github.com/XTLS/Xray-core/releases/download/v$(PKG_VERSION)/
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
+PKG_HASH:=skip
 
-define Build/Patch
-	$(CP) $(PKG_BUILD_DIR)/../Xray-core-$(PKG_VERSION)/* $(PKG_BUILD_DIR)
+include $(INCLUDE_DIR)/package.mk
+
+define Package/xray
+	SECTION:=net
+	CATEGORY:=Network
+	TITLE:=A network tool-sets originates from XTLS protocol.
+	URL:=https://github.com/XTLS/Xray-core
+endef
+
+define Package/xray/config
+	config XRAY_GEO_DATA
+		depends on PACKAGE_xray
+		bool "Build GEO Data"
+endef
+
+define Package/xray/description
+	Project X originates from XTLS protocol, provides a set of network tools.
+endef
+
+define Build/Prepare
+	unzip -o -d $(PKG_BUILD_DIR)/ $(DL_DIR)/$(PKG_SOURCE)
+	mv $(DL_DIR)/$(PKG_SOURCE) $(DL_DIR)/xray-linux-$(PKG_ARCH)-$(PKG_VERSION)-$(PKG_RELEASE).zip
 endef
 
 define Build/Compile
-	cd $(PKG_BUILD_DIR); $(GO_PKG_VARS) CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o $(PKG_INSTALL_DIR)/bin/xray ./main; 
+	echo "$(PKG_NAME) Compile Skiped!"
+	[ -f $(PKG_BUILD_DIR)/xray_softfloat ] && mv $(PKG_BUILD_DIR)/xray_softfloat $(PKG_BUILD_DIR)/xray || true
 endef
 
-define Package/$(PKG_NAME)/install
+define Package/xray/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/xray $(1)/usr/bin/xray
-	$(INSTALL_DIR) $(1)/usr/share/xray
-ifdef CONFIG_PACKAGE_XRAY_INCLUDE_GEOIP
-	$(PROXYCHAINS) wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -O $(PKG_BUILD_DIR)/geoip.dat
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/geoip.dat $(1)/usr/share/xray/
-endif
-ifdef CONFIG_PACKAGE_XRAY_INCLUDE_GEOSITE
-	$(PROXYCHAINS) wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat -O $(PKG_BUILD_DIR)/geosite.dat
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/geosite.dat $(1)/usr/share/xray/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/xray $(1)/usr/bin
+ifeq ($(CONFIG_XRAY_GEO_DATA),y)
+	$(INSTALL_DIR) $(1)/opt/share/xray
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/geosite.dat $(1)/opt/share/xray
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/geoip.dat $(1)/opt/share/xray
 endif
 endef
 
-$(eval $(call BuildPackage,$(PKG_NAME)))
+$(eval $(call BuildPackage,xray))
